@@ -3,30 +3,34 @@
 # References: 
 # 1. https://ryanstutorials.net/bash-scripting-tutorial/bash-if-statements.php#summary
 # 2. https://ryanstutorials.net/bash-scripting-tutorial/bash-input.php
+# 3. https://stackoverflow.com/questions/16365130/what-is-the-difference-between-usr-bin-env-bash-and-usr-bin-bash
+# 4. https://github.com/RehanSaeed/Bash-Cheat-Sheet 
 
 # Check if exactly two arguments are provided
-if [[ $# -ne 2 ]]; then
+if [ $# -ne 2 ]; then
     echo "Error: Missing arguments"
     echo "Usage: $0 <filesdir> <searchstr>"
     exit 1
 fi
 
+# First argument
 filesdir="$1"
+# Second argument
 searchstr="$2"
 
 # Check if filesdir is a valid directory
-if [[ ! -d "$filesdir" ]]; then
+if [ ! -d "$filesdir" ]; then
     echo "Error: $filesdir is not a directory"
     exit 1
 fi
 
-# Count number of files (recursively)
+# Count number of files recursively
 num_files=$(find "$filesdir" -type f | wc -l)
 
 # Count number of matching lines containing searchstr
 num_matching_lines=$(grep -r "$searchstr" "$filesdir" | wc -l)
 
-# Print the required message
+# Print message
 echo "The number of files are $num_files and the number of matching lines are $num_matching_lines"
 
 exit 0
