@@ -5,6 +5,8 @@
 * References:
 * 1. Linux System Programming by Robert Love Chapter 2
 * 2. Linux man pages - https://man7.org/linux/man-pages/index.html
+* 3. https://stackoverflow.com/questions/44394034/how-to-view-syslog-in-ubuntu 
+* 4. https://linux.die.net/man/8/syslogd
 */
 
 
