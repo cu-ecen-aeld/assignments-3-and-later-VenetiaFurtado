@@ -3,10 +3,10 @@
 # Author: Siddhant Jajoo
 
 # Clean previous build artifacts
-make clean
+#make clean
 
 # Build writer using native compilation
-make
+#make
 
 set -e
 set -u

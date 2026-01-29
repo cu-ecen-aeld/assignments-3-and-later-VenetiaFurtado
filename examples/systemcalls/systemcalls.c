@@ -9,15 +9,37 @@
 */
 bool do_system(const char *cmd)
 {
-
 /*
  * TODO  add your code here
  *  Call the system() function with the command set in the cmd
  *   and return a boolean true if the system() call completed with success
  *   or false() if it returned a failure
 */
+    if(cmd == NULL)
+    {
+        return false;
+    }
 
-    return true;
+    /*This code has been referenced from: https://www.geeksforgeeks.org/linux-unix/exit-status-child-process-linux/
+    and from the code snippet in Linux System Programming by Robert Love (Chapter 5 - Waiting for Terminated Child processes)*/
+    int status = system(cmd);
+
+    //check if invocation of system() call fails
+    if(status == -1)
+    {
+        return false;
+    }
+
+    //check if system() call completed successfully
+    //WIFEXITED(status): returns true if the child terminated normally
+    //WEXITSTATUS(status): returns the exit status of the child. This macro is
+    // employed only if WIFEXITED returned true.
+    //Source: https://www.geeksforgeeks.org/linux-unix/exit-status-child-process-linux/
+    if (WIFEXITED(status) && WEXITSTATUS(status) == 0)
+    {
+        return true;
+    }
+    return false;
 }
 
 /**
