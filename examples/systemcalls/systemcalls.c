@@ -41,7 +41,6 @@ bool do_system(const char *cmd)
     // WIFEXITED(status): returns true if the child terminated normally
     // WEXITSTATUS(status): returns the exit status of the child. This macro is
     //  employed only if WIFEXITED returned true.
-    // Source: https://www.geeksforgeeks.org/linux-unix/exit-status-child-process-linux/
     if (WIFEXITED(status))
     {
         int exit_status = WEXITSTATUS(status);
@@ -186,6 +185,7 @@ bool do_exec_redirect(const char *outputfile, int count, ...)
         }
 
         // Redirect stdout to the file
+        //Reference: https://chatgpt.com/share/697c2e23-4dd4-8001-a514-8c3a61cdb0e4
         if (dup2(fd, STDOUT_FILENO) < 0) 
         {
             close(fd);
