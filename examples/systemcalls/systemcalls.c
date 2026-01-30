@@ -2,6 +2,7 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <sys/wait.h>
+#include <unistd.h>
 #include "systemcalls.h"
 
 /**
@@ -92,10 +93,43 @@ bool do_exec(int count, ...)
  *   as second argument to the execv() command.
  *
 */
+    pid_t child_pid = fork();
+
+    if (child_pid == -1) 
+    {
+        // fork failed
+        va_end(args);
+        return false;
+    }
+
+    //child process
+    if (child_pid == 0) 
+    {
+        execv(command[0], command);
+
+        // If execv returns, it failed
+        exit(EXIT_FAILURE);
+    }
+
+    // Parent process
+    int status;
+
+    if (waitpid(child_pid, &status, 0) == -1) 
+    {
+        // waitpid failed
+        va_end(args);
+        return false;
+    }
+
+    // Check if child exited normally and with status 0
+    if (WIFEXITED(status) && WEXITSTATUS(status) == 0) 
+    {
+        va_end(args);
+        return true;
+    }
 
     va_end(args);
-
-    return true;
+    return false;
 }
 
 /**
