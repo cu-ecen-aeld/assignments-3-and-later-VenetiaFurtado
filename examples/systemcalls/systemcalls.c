@@ -1,3 +1,7 @@
+#include <stdbool.h>
+#include <stdio.h>
+#include <stdlib.h>
+#include <sys/wait.h>
 #include "systemcalls.h"
 
 /**
@@ -20,13 +24,13 @@ bool do_system(const char *cmd)
         return false;
     }
 
-    /*This code has been referenced from: https://www.geeksforgeeks.org/linux-unix/exit-status-child-process-linux/
-    and from the code snippet in Linux System Programming by Robert Love (Chapter 5 - Waiting for Terminated Child processes)*/
+    /*This code has been referenced from Linux System Programming (Chapter 5 - Waiting for Terminated Child processes)*/
     int status = system(cmd);
 
     //check if invocation of system() call fails
     if(status == -1)
     {
+        perror("system");
         return false;
     }
 
@@ -35,10 +39,18 @@ bool do_system(const char *cmd)
     //WEXITSTATUS(status): returns the exit status of the child. This macro is
     // employed only if WIFEXITED returned true.
     //Source: https://www.geeksforgeeks.org/linux-unix/exit-status-child-process-linux/
-    if (WIFEXITED(status) && WEXITSTATUS(status) == 0)
+    if (WIFEXITED(status))
     {
-        return true;
+        int exit_status = WEXITSTATUS(status);
+        printf("Process exited normally with exit code %d\n", exit_status);
+
+        if(exit_status == 0)
+        {
+            return true;
+        }
     }
+
+    printf("Command did not exit normally\n");
     return false;
 }
 
