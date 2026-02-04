@@ -1,4 +1,4 @@
-#!/usr/bin/env bash
+#!/bin/sh
 
 # References: 
 # 1. https://ryanstutorials.net/bash-scripting-tutorial/bash-if-statements.php#summary
