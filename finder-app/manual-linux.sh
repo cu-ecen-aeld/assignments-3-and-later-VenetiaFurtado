@@ -124,4 +124,3 @@ find . | cpio -H newc -ov --owner root:root > ${OUTDIR}/initramfs.cpio
 
 cd "$OUTDIR"
 gzip -f initramfs.cpio
-963/.8
