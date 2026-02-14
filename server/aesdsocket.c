@@ -1,3 +1,8 @@
+/**
+* Assignment 5: Native Socket Server
+* ECEN 5713 | Spring 2026
+* Venetia Furtado
+*/
 #include <syslog.h>
 #include <sys/socket.h>
 #include <netinet/in.h>
@@ -15,9 +20,7 @@
 
 #define PORT 9000  // the port users will be connecting to
 #define BACKLOG 10 // how many pending connections queue will hold
-
 #define BUFFER_SIZE 1024
-
 #define FOLDER_PATH "/var/tmp"
 #define FILE_PATH "/var/tmp/aesdsocketdata"
 
@@ -30,6 +33,9 @@ typedef struct RecvDataLinkedList
    struct RecvDataLinkedList *next;
 } RecvDataLinkedList;
 
+/**
+ * Handles termination signals
+ */
 void signalHandler(int signo)
 {
    if (signo == SIGINT || signo == SIGTERM)
@@ -39,9 +45,14 @@ void signalHandler(int signo)
    }
 }
 
-// https://www.csl.mtu.edu/cs4411.ck/www/NOTES/process/fork/create.html
-// https://chatgpt.com/share/6990b8d4-fd50-8001-b943-f17029e505a1
-// https://man7.org/tlpi/code/online/dist/daemons/become_daemon.c.html
+
+/**
+* Creates a daemon process
+* References:
+* https://www.csl.mtu.edu/cs4411.ck/www/NOTES/process/fork/create.html
+* https://chatgpt.com/share/6990b8d4-fd50-8001-b943-f17029e505a1
+* https://man7.org/tlpi/code/online/dist/daemons/become_daemon.c.html
+*/
 int createDaemon()
 {
    pid_t pid = fork();
@@ -77,6 +88,14 @@ int createDaemon()
    return 0;
 }
 
+
+/**
+ * Creates and configures a TCP server socket.
+ * References:
+ * https://www.geeksforgeeks.org/c/socket-programming-cc/
+ * https://beej.us/guide/bgnet/html/#a-simple-stream-server
+ * Linux man-pages
+ */
 int createSocket(bool daemon_mode)
 {
    // creating socket file descriptor
@@ -126,6 +145,12 @@ int createSocket(bool daemon_mode)
    return sockfd;
 }
 
+/**
+ * Handles client connection on a TCP server socket
+ * References:
+ * https://chatgpt.com/share/6990c241-5394-8001-b147-d4dc07ab1402
+ * Linux man-pages
+ */
 int handleClientConnection(const int sockfd)
 {
    int status = 0;
@@ -147,6 +172,7 @@ int handleClientConnection(const int sockfd)
 
    // log IP addr of the connected client
    char client_ip[INET_ADDRSTRLEN];
+   //https://man7.org/linux/man-pages/man3/inet_ntop.3.html
    inet_ntop(AF_INET, &client_addr.sin_addr, client_ip, sizeof(client_ip));
    syslog(LOG_INFO, "Accepted connection from %s", client_ip);
 
@@ -280,6 +306,9 @@ int handleClientConnection(const int sockfd)
    return status;
 }
 
+/**
+* Entry point for the server application.
+*/
 int main(int argc, char *argv[])
 {
    bool daemon_mode = false;
