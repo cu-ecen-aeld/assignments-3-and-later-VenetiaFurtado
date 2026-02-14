@@ -22,11 +22,9 @@ typedef struct RecvDataLinkedList
    struct RecvDataLinkedList *next;
 } RecvDataLinkedList;
 
-int main()
-{
-   // Open syslog
-   openlog("aesdsocket", LOG_PID, LOG_USER);
 
+int createSocket()
+{
    // creating socket file descriptor
    int sockfd = socket(AF_INET, SOCK_STREAM, 0);
    if (sockfd < 0)
@@ -63,127 +61,129 @@ int main()
       return -1;
    }
 
-   // client accept + recv loop
+   return sockfd;
+}
+
+int handleClientConnection(const int sockfd)
+{
+   int status = 0;
+
+   struct sockaddr_in client_addr;
+   socklen_t addr_len = sizeof(client_addr);
+
+   // for each accepted connection create a new fd(client_fd)
+   int client_fd = accept(sockfd, (struct sockaddr *)&client_addr, &addr_len);
+   if (client_fd < 0)
+   {
+      syslog(LOG_ERR, "accept failed");
+      return -1;
+   }
+
+   // log IP addr of the connected client
+   char client_ip[INET_ADDRSTRLEN];
+   inet_ntop(AF_INET, &client_addr.sin_addr, client_ip, sizeof(client_ip));
+   syslog(LOG_INFO, "Accepted connection from %s", client_ip);
+
+   RecvDataLinkedList dummyhead;
+   dummyhead.buffer = NULL;
+   dummyhead.len = 0;
+   dummyhead.next = NULL;
+
+   RecvDataLinkedList *node = &dummyhead;
    while (1)
    {
-      struct sockaddr_in client_addr;
-      socklen_t addr_len = sizeof(client_addr);
-      // for each accepted conection create a new fd(clientfd)
-      int clientfd = accept(sockfd, (struct sockaddr *)&client_addr, &addr_len);
-      if (clientfd < 0)
+      char buffer[BUFFER_SIZE];
+
+      syslog(LOG_DEBUG, "Trying to recv from %s", client_ip);
+
+      // Receive data from socket of maximum size = BUFFER_SIZE
+      ssize_t bytes = recv(client_fd, buffer, BUFFER_SIZE, 0);
+      if (bytes <= 0)
       {
-         syslog(LOG_ERR, "accept failed");
-         return -1;
+         syslog(LOG_ERR, "recv failed");
+         break;
       }
 
-      // log IP addr of the connected client
-      char client_ip[INET_ADDRSTRLEN];
-      inet_ntop(AF_INET, &client_addr.sin_addr, client_ip, sizeof(client_ip));
-      syslog(LOG_INFO, "Accepted connection from %s", client_ip);
+      syslog(LOG_DEBUG, "recvd %ld bytes from %s", bytes, client_ip);
 
-      RecvDataLinkedList head;
-      head.buffer = NULL;
-      head.len = 0;
-      head.next = NULL;
-
-      RecvDataLinkedList *node = &head;
-      while (1)
+      // allocate new memory for received data
+      char *temp = (char *)malloc(bytes);
+      if (!temp)
       {
-         char buffer[BUFFER_SIZE];
+         syslog(LOG_ERR, "malloc failed");
+         break;
+      }
 
-         syslog(LOG_DEBUG, "Trying to recv from %s", client_ip);
+      // copy data into the new memory
+      memcpy(temp, buffer, bytes);
 
-         // Receive data from socket of maximum size = BUFFER_SIZE
-         ssize_t bytes = recv(clientfd, buffer, BUFFER_SIZE, 0);
-         if (bytes <= 0)
+      // create new ll node and store the data pointer
+      RecvDataLinkedList *newnode = (RecvDataLinkedList *)malloc(sizeof(RecvDataLinkedList));
+      newnode->buffer = temp;
+      newnode->len = bytes;
+      newnode->next = NULL;
+
+      // add the new node to the ll and move the ll ahead
+      node->next = newnode;
+      node = node->next;
+
+      syslog(LOG_DEBUG, "Added new node to ll");
+
+      bool newLineFound = false;
+      for (int i = 0; i < bytes; i++)
+      {
+         if (buffer[i] == '\n')
          {
-            syslog(LOG_ERR, "recv failed");
-            break;
-         }
-
-         syslog(LOG_DEBUG, "recvd %ld bytes from %s", bytes, client_ip);
-
-         // allocate new memory for received data
-         char *temp = (char *)malloc(bytes);
-         if (!temp)
-         {
-            syslog(LOG_ERR, "malloc failed");
-            break;
-         }
-
-         // copy data into the new memory
-         memcpy(temp, buffer, bytes);
-
-         // create new ll node and store the data pointer
-         RecvDataLinkedList* newnode = (RecvDataLinkedList*)malloc(sizeof(RecvDataLinkedList));
-         newnode->buffer = temp;
-         newnode->len = bytes;
-         newnode->next = NULL;
-
-         // add the new node to the ll and move the ll ahead
-         node->next = newnode;
-         node = node->next;
-
-         syslog(LOG_DEBUG, "Added new node to ll");
-
-         bool newLineFound = false;
-         for (int i = 0; i < bytes; i++)
-         {
-            if (buffer[i] == '\n')
-            {
-               newLineFound = true;
-               break;
-            }
-         }
-
-         if (newLineFound == true)
-         {
+            newLineFound = true;
             break;
          }
       }
 
-      node = head.next;
-
-      // if any data is received, open the file
-      int writefilefd = -1;
-      if (node != NULL)
+      if (newLineFound == true)
       {
-         writefilefd = open(FILE_PATH, O_WRONLY | O_CREAT | O_APPEND, 0644);
-         if (writefilefd < 0)
-         {
-            syslog(LOG_ERR, "writefile open failed");
-         }
+         break;
       }
+   }
 
-      // copy received data into the file
-     
-      while (writefilefd >= 0 && node != NULL)
+   node = dummyhead.next;
+
+   // if any data is received, open the file
+   int writefile_fd = -1;
+   if (node != NULL)
+   {
+      writefile_fd = open(FILE_PATH, O_WRONLY | O_CREAT | O_APPEND, 0644);
+      if (writefile_fd < 0)
       {
-         syslog(LOG_DEBUG, "writing %d bytes to file", node->len);
-         size_t bytes_to_write = node->len;
-         size_t bytes_written = write(writefilefd, node->buffer, bytes_to_write);
-         if(bytes_written < bytes_to_write)
-         {
-            syslog(LOG_ERR, "bytes_written %ld < bytes_to_write %ld", bytes_written, bytes_to_write);
-         }
-         free(node->buffer);
-         node->buffer = NULL;
-         RecvDataLinkedList* tempnode = node;
-         node = node->next;
-         free(tempnode);
+         syslog(LOG_ERR, "writefile open failed");
+         status = -1;
       }
+   }
 
-      if (writefilefd >= 0)
+   // copy received data into the file
+   while (writefile_fd >= 0 && node != NULL)
+   {
+      syslog(LOG_DEBUG, "writing %d bytes to file", node->len);
+      size_t bytes_to_write = node->len;
+      size_t bytes_written = write(writefile_fd, node->buffer, bytes_to_write);
+      if (bytes_written < bytes_to_write)
       {
-         close(writefilefd);
+         syslog(LOG_ERR, "bytes_written %ld < bytes_to_write %ld", bytes_written, bytes_to_write);
       }
+      free(node->buffer);
+      node->buffer = NULL;
+      RecvDataLinkedList *tempnode = node;
+      node = node->next;
+      free(tempnode);
+   }
 
-      int readfilefd = open(FILE_PATH, O_RDONLY);
-      if (readfilefd < 0)
-      {
-         syslog(LOG_ERR, "read file open failed");
-      }
+   if (writefile_fd >= 0)
+   {
+      close(writefile_fd);
+   }
 
+   int readfilefd = open(FILE_PATH, O_RDONLY);
+   if (readfilefd >= 0)
+   {
       while (1)
       {
          char buffer[BUFFER_SIZE];
@@ -193,17 +193,50 @@ int main()
             break;
          }
 
-         send(clientfd, buffer, bytes_read, 0);
+         send(client_fd, buffer, bytes_read, 0);
       }
       close(readfilefd);
-
-      syslog(LOG_DEBUG, "No errors, closing client connection");
-
-      close(clientfd);
-      syslog(LOG_INFO, "Closed connection from %s", client_ip);
+   }
+   else
+   {
+      syslog(LOG_ERR, "read file open failed");
+      status = -1;
    }
 
-   close(sockfd);
+   if (status == 0)
+   {
+      syslog(LOG_DEBUG, "No errors, closing client connection");
+   }
+
+   close(client_fd);
+   syslog(LOG_INFO, "Closed connection from %s", client_ip);
+
+   return status;
+}
+
+int main()
+{
+   // Open syslog
+   openlog("aesdsocket", LOG_PID, LOG_USER);
+
+   // creating socket file descriptor
+   int sock_fd = createSocket();
+   if (sock_fd < 0)
+   {
+      return -1;
+   }
+
+   // client accept + recv loop
+   while (1)
+   {
+      int client_status = handleClientConnection(sock_fd);
+      if (client_status == -1)
+      {
+         break;
+      }
+   }
+
+   close(sock_fd);
 
    // Clean up syslog
    closelog();
