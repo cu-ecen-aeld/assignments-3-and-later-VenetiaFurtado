@@ -7,6 +7,9 @@
 #include <string.h>
 #include <arpa/inet.h>
 #include <fcntl.h>
+#include <signal.h>
+#include <stdio.h>
+
 
 #define PORT 9000  // the port users will be connecting to
 #define BACKLOG 10 // how many pending connections queue will hold
@@ -15,6 +18,8 @@
 
 #define FILE_PATH "/var/tmp/aesdsocketdata"
 
+static volatile bool exit_requested = false;
+
 typedef struct RecvDataLinkedList
 {
    char *buffer;
@@ -22,6 +27,14 @@ typedef struct RecvDataLinkedList
    struct RecvDataLinkedList *next;
 } RecvDataLinkedList;
 
+void signalHandler(int signo)
+{
+   if (signo == SIGINT || signo == SIGTERM)
+   {
+      syslog(LOG_INFO, "Caught signal, exiting");
+      exit_requested = true;
+   }
+}
 
 int createSocket()
 {
@@ -73,6 +86,10 @@ int handleClientConnection(const int sockfd)
 
    // for each accepted connection create a new fd(client_fd)
    int client_fd = accept(sockfd, (struct sockaddr *)&client_addr, &addr_len);
+   if(exit_requested == true)
+   {
+      return 0;
+   }
    if (client_fd < 0)
    {
       syslog(LOG_ERR, "accept failed");
@@ -219,6 +236,12 @@ int main()
    // Open syslog
    openlog("aesdsocket", LOG_PID, LOG_USER);
 
+   struct sigaction signal_action;
+   memset(&signal_action, 0, sizeof(signal_action));
+   signal_action.sa_handler = signalHandler;
+   sigaction(SIGINT, &signal_action, NULL);
+   sigaction(SIGTERM, &signal_action, NULL);
+
    // creating socket file descriptor
    int sock_fd = createSocket();
    if (sock_fd < 0)
@@ -227,7 +250,7 @@ int main()
    }
 
    // client accept + recv loop
-   while (1)
+   while (exit_requested == false)
    {
       int client_status = handleClientConnection(sock_fd);
       if (client_status == -1)
@@ -237,6 +260,14 @@ int main()
    }
 
    close(sock_fd);
+
+   // https://chatgpt.com/share/6990b14f-5cec-8001-afef-c634acf831d3
+   if (remove(FILE_PATH) != 0)
+   {
+      syslog(LOG_ERR, "Error deleting file");
+   }
+   syslog(LOG_DEBUG, "Deleted File");
+
 
    // Clean up syslog
    closelog();
