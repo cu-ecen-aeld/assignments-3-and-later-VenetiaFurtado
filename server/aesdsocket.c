@@ -115,13 +115,13 @@ int main()
          memcpy(temp, buffer, bytes);
 
          // create new ll node and store the data pointer
-         RecvDataLinkedList newnode;
-         newnode.buffer = temp;
-         newnode.len = bytes;
-         newnode.next = NULL;
+         RecvDataLinkedList* newnode = (RecvDataLinkedList*)malloc(sizeof(RecvDataLinkedList));
+         newnode->buffer = temp;
+         newnode->len = bytes;
+         newnode->next = NULL;
 
          // add the new node to the ll and move the ll ahead
-         node->next = &newnode;
+         node->next = newnode;
          node = node->next;
 
          syslog(LOG_DEBUG, "Added new node to ll");
@@ -142,9 +142,11 @@ int main()
          }
       }
 
+      node = head.next;
+
       // if any data is received, open the file
       int writefilefd = -1;
-      if (head.next != NULL)
+      if (node != NULL)
       {
          writefilefd = open(FILE_PATH, O_WRONLY | O_CREAT | O_APPEND, 0644);
          if (writefilefd < 0)
@@ -154,12 +156,21 @@ int main()
       }
 
       // copy received data into the file
-      while (writefilefd >= 0 && head.next != NULL)
+     
+      while (writefilefd >= 0 && node != NULL)
       {
-         head = *head.next;
-         syslog(LOG_DEBUG, "writing %d bytes to file", head.len);
-         write(writefilefd, head.buffer, head.len);
-         free(head.buffer);
+         syslog(LOG_DEBUG, "writing %d bytes to file", node->len);
+         size_t bytes_to_write = node->len;
+         size_t bytes_written = write(writefilefd, node->buffer, bytes_to_write);
+         if(bytes_written < bytes_to_write)
+         {
+            syslog(LOG_ERR, "bytes_written %ld < bytes_to_write %ld", bytes_written, bytes_to_write);
+         }
+         free(node->buffer);
+         node->buffer = NULL;
+         RecvDataLinkedList* tempnode = node;
+         node = node->next;
+         free(tempnode);
       }
 
       if (writefilefd >= 0)
@@ -190,8 +201,6 @@ int main()
 
       close(clientfd);
       syslog(LOG_INFO, "Closed connection from %s", client_ip);
-
-
    }
 
    close(sockfd);
