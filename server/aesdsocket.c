@@ -9,6 +9,8 @@
 #include <fcntl.h>
 #include <signal.h>
 #include <stdio.h>
+#include <sys/stat.h>
+
 
 
 #define PORT 9000  // the port users will be connecting to
@@ -16,6 +18,7 @@
 
 #define BUFFER_SIZE 1024
 
+#define FOLDER_PATH "/var/tmp"
 #define FILE_PATH "/var/tmp/aesdsocketdata"
 
 static volatile bool exit_requested = false;
@@ -36,7 +39,45 @@ void signalHandler(int signo)
    }
 }
 
-int createSocket()
+// https://www.csl.mtu.edu/cs4411.ck/www/NOTES/process/fork/create.html
+// https://chatgpt.com/share/6990b8d4-fd50-8001-b943-f17029e505a1
+// https://man7.org/tlpi/code/online/dist/daemons/become_daemon.c.html
+int createDaemon()
+{
+   pid_t pid = fork();
+   if (pid < 0)
+   {
+      syslog(LOG_ERR, "fork failed");
+      return -1;
+   }
+   // parent should exit after successful fork, now only child continues
+   if (pid > 0)
+   {
+      exit(EXIT_SUCCESS);
+   }
+
+   // creates a new session
+   if (setsid() == -1)
+   {
+      syslog(LOG_ERR, "setsid failed");
+      return -1;
+   }
+
+   // Clear file mode creation mask
+   umask(0);
+
+   // change directory to FOLDER_PATH, prevents FILE_PATH getting unmounted while daemon is running.
+   chdir(FOLDER_PATH);
+
+   // close these because daemons should not log to the terminal
+   close(STDIN_FILENO);
+   close(STDOUT_FILENO);
+   close(STDERR_FILENO);
+
+   return 0;
+}
+
+int createSocket(bool daemon_mode)
 {
    // creating socket file descriptor
    int sockfd = socket(AF_INET, SOCK_STREAM, 0);
@@ -65,6 +106,14 @@ int createSocket()
    {
       syslog(LOG_ERR, "socket bind failed");
       return -1;
+   }
+
+   if (daemon_mode == true)
+   {
+      if (createDaemon() < 0)
+      {
+         return -1;
+      }
    }
 
    // listen to upto BACKLOG connections
@@ -231,10 +280,19 @@ int handleClientConnection(const int sockfd)
    return status;
 }
 
-int main()
+int main(int argc, char *argv[])
 {
+   bool daemon_mode = false;
+
    // Open syslog
    openlog("aesdsocket", LOG_PID, LOG_USER);
+
+   // check if -d argument is specified by user
+   if (argc == 2 && strcmp(argv[1], "-d") == 0)
+   {
+      syslog(LOG_INFO, "Daemon mode selected");
+      daemon_mode = true;
+   }
 
    struct sigaction signal_action;
    memset(&signal_action, 0, sizeof(signal_action));
@@ -243,9 +301,10 @@ int main()
    sigaction(SIGTERM, &signal_action, NULL);
 
    // creating socket file descriptor
-   int sock_fd = createSocket();
+   int sock_fd = createSocket(daemon_mode);
    if (sock_fd < 0)
    {
+      closelog();
       return -1;
    }
 
