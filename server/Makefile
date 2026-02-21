@@ -1,5 +1,4 @@
 ################################################################################
-# Assignment 2: File Operations and Cross Compiler
 # ECEN 5713 | Spring 2026
 # Author: Venetia Furtado
 # GNU makefile for writer application

@@ -15,6 +15,7 @@
 #include <signal.h>
 #include <stdio.h>
 #include <sys/stat.h>
+#include <pthread.h>
 
 
 
@@ -24,6 +25,7 @@
 #define FOLDER_PATH "/var/tmp"
 #define FILE_PATH "/var/tmp/aesdsocketdata"
 
+pthread_mutex_t file_mutex = PTHREAD_MUTEX_INITIALIZER;
 static volatile bool exit_requested = false;
 
 typedef struct RecvDataLinkedList
@@ -145,43 +147,35 @@ int createSocket(bool daemon_mode)
    return sockfd;
 }
 
-/**
- * Handles client connection on a TCP server socket
- * References:
- * https://chatgpt.com/share/6990c241-5394-8001-b147-d4dc07ab1402
- * Linux man-pages
- */
-int handleClientConnection(const int sockfd)
-{
-   int status = 0;
-
+typedef struct ThreadArg{
+   int client_fd;
    struct sockaddr_in client_addr;
-   socklen_t addr_len = sizeof(client_addr);
+   pthread_t thread;
+   bool isDone;
+   struct ThreadArg* next;
+} ThreadArg;
 
-   // for each accepted connection create a new fd(client_fd)
-   int client_fd = accept(sockfd, (struct sockaddr *)&client_addr, &addr_len);
-   if(exit_requested == true)
-   {
-      return 0;
-   }
-   if (client_fd < 0)
-   {
-      syslog(LOG_ERR, "accept failed");
-      return -1;
-   }
+ThreadArg dummyNode;
 
-   // log IP addr of the connected client
-   char client_ip[INET_ADDRSTRLEN];
-   //https://man7.org/linux/man-pages/man3/inet_ntop.3.html
-   inet_ntop(AF_INET, &client_addr.sin_addr, client_ip, sizeof(client_ip));
-   syslog(LOG_INFO, "Accepted connection from %s", client_ip);
 
+void* processClientConnection(void* arg)
+{
+   ThreadArg* threadArg = (ThreadArg *)arg;
+
+   int client_fd = threadArg->client_fd;
+   struct sockaddr_in client_addr = threadArg->client_addr;
+
+   int status = 0;
    RecvDataLinkedList dummyhead;
    dummyhead.buffer = NULL;
    dummyhead.len = 0;
    dummyhead.next = NULL;
 
    RecvDataLinkedList *node = &dummyhead;
+   // log IP addr of the connected client
+   char client_ip[INET_ADDRSTRLEN];
+   //https://man7.org/linux/man-pages/man3/inet_ntop.3.html
+   inet_ntop(AF_INET, &client_addr.sin_addr, client_ip, sizeof(client_ip));
    while (1)
    {
       char buffer[BUFFER_SIZE];
@@ -239,6 +233,8 @@ int handleClientConnection(const int sockfd)
 
    node = dummyhead.next;
 
+   pthread_mutex_lock(&file_mutex);
+
    // if any data is received, open the file
    int writefile_fd = -1;
    if (node != NULL)
@@ -273,6 +269,8 @@ int handleClientConnection(const int sockfd)
       close(writefile_fd);
    }
 
+   pthread_mutex_unlock(&file_mutex);
+
    int readfilefd = open(FILE_PATH, O_RDONLY);
    if (readfilefd >= 0)
    {
@@ -302,6 +300,90 @@ int handleClientConnection(const int sockfd)
 
    close(client_fd);
    syslog(LOG_INFO, "Closed connection from %s", client_ip);
+
+   threadArg->isDone = true;
+
+   return NULL;
+}
+
+
+/**
+ * Handles client connection on a TCP server socket
+ * References:
+ * https://chatgpt.com/share/6990c241-5394-8001-b147-d4dc07ab1402
+ * Linux man-pages
+ */
+int acceptClientConnection(const int sockfd)
+{
+   int status = 0;
+
+   struct sockaddr_in client_addr;
+   socklen_t addr_len = sizeof(client_addr);
+
+   // for each accepted connection create a new fd(client_fd)
+   int client_fd = accept(sockfd, (struct sockaddr *)&client_addr, &addr_len);
+   if(exit_requested == true)
+   {
+      return 0;
+   }
+   if (client_fd < 0)
+   {
+      syslog(LOG_ERR, "accept failed");
+      return -1;
+   }
+
+   // log IP addr of the connected client
+   char client_ip[INET_ADDRSTRLEN];
+   //https://man7.org/linux/man-pages/man3/inet_ntop.3.html
+   inet_ntop(AF_INET, &client_addr.sin_addr, client_ip, sizeof(client_ip));
+   syslog(LOG_INFO, "Accepted connection from %s", client_ip);
+
+   pthread_t thread;
+   ThreadArg* arg = (ThreadArg*)malloc(sizeof(ThreadArg));
+   //TODO error if malloc fails
+   arg->client_addr = client_addr;
+   arg->client_fd = client_fd;
+   arg->isDone = false;
+   arg->next = NULL;
+
+   int ret = pthread_create(&thread, NULL, processClientConnection, arg);
+   if (ret != 0)
+   {
+      syslog(LOG_ERR,"pthread_create failed");
+      return 1;
+   }
+
+   arg->thread = thread;
+
+   // add newly created ThreadArg* arg to end of ll
+   ThreadArg* var = &dummyNode;
+   while(var->next != NULL)
+   {
+      var = var->next;
+   } 
+   var->next = arg;
+
+   // pthread_join all isDone=true threads
+   ThreadArg* prev = &dummyNode;
+   ThreadArg* current = dummyNode.next;
+   while(current != NULL)
+   {
+      if(current->isDone == true)
+      {
+         prev->next = current->next;
+         ThreadArg* temp = current;
+         current = current->next;
+
+         // free temp
+         pthread_join(temp->thread, NULL);
+         free(temp);
+      }
+      else
+      {
+         prev = current;
+         current = current->next;
+      }
+   }
 
    return status;
 }
@@ -340,7 +422,7 @@ int main(int argc, char *argv[])
    // client accept + recv loop
    while (exit_requested == false)
    {
-      int client_status = handleClientConnection(sock_fd);
+      int client_status = acceptClientConnection(sock_fd);
       if (client_status == -1)
       {
          break;
