@@ -67,13 +67,15 @@ void timer_handler(union sigval sigval)
    if (writefile_fd < 0)
    {
       syslog(LOG_ERR, "writefile open failed");
+      pthread_mutex_unlock(&file_mutex);  // unlock before returning
       return;
    }
 
-   size_t bytes_written = write(writefile_fd, line, strlen(line));
+   ssize_t bytes_written = write(writefile_fd, line, strlen(line));
    if (bytes_written < 0)
    {
       syslog(LOG_ERR, "ts not written");
+      pthread_mutex_unlock(&file_mutex);  // unlock before returning
       return;
    }
 
@@ -93,11 +95,9 @@ void timerInit()
    struct sigevent sev = {
        .sigev_notify = SIGEV_THREAD,
        .sigev_notify_function = timer_handler,
-       .sigev_notify_attributes = NULL,
-       .sigev_value.sival_int = 0,
    };
 
-   if (timer_create(CLOCK_REALTIME, &sev, &timerid) == -1)
+   if (timer_create(CLOCK_MONOTONIC, &sev, &timerid) == -1)
    {
       syslog(LOG_ERR, "timer_create failed");
       return;
@@ -478,7 +478,6 @@ int main(int argc, char *argv[])
    sigaction(SIGINT, &signal_action, NULL);
    sigaction(SIGTERM, &signal_action, NULL);
 
-   timerInit();
 
    // creating socket file descriptor
    int sock_fd = createSocket(daemon_mode);
@@ -487,6 +486,9 @@ int main(int argc, char *argv[])
       closelog();
       return -1;
    }
+
+   //https://chatgpt.com/share/6999e4b4-4eb8-8001-b45e-dd046a60ca70
+   timerInit();
 
    // client accept + recv loop
    while (exit_requested == false)
