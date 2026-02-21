@@ -1,5 +1,5 @@
 /**
- * Assignment 5: Native Socket Server
+ * Assignment 6: Native Socket Server Threading Support
  * ECEN 5713 | Spring 2026
  * Venetia Furtado
  */
@@ -24,7 +24,7 @@
 #define FOLDER_PATH "/var/tmp"
 #define FILE_PATH "/var/tmp/aesdsocketdata"
 
-pthread_mutex_t file_mutex = PTHREAD_MUTEX_INITIALIZER;
+pthread_mutex_t file_mutex;
 static volatile bool exit_requested = false;
 timer_t timerid; // create timer
 
@@ -47,6 +47,9 @@ void signalHandler(int signo)
    }
 }
 
+/**
+ * POSIX timer callback function that appends a timestamp to the file
+ */
 void timer_handler(union sigval sigval)
 {
    time_t t = time(NULL);
@@ -89,6 +92,9 @@ void timer_handler(union sigval sigval)
    pthread_mutex_unlock(&file_mutex);
 }
 
+/**
+ * Initialize and start POSIX timer
+ */
 void timerInit()
 {
    // Configure thread notification
@@ -215,6 +221,9 @@ int createSocket(bool daemon_mode)
    return sockfd;
 }
 
+/**
+ * Struct containing per-client thread info
+ */
 typedef struct ThreadArg
 {
    int client_fd;
@@ -226,6 +235,10 @@ typedef struct ThreadArg
 
 ThreadArg dummyNode;
 
+/**
+ * Thread routine to process a client socket connection. The function is executed
+ * in a separate thread for each accepted client connection.
+ */
 void *processClientConnection(void *arg)
 {
    ThreadArg *threadArg = (ThreadArg *)arg;
