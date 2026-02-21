@@ -7,15 +7,15 @@
 
 # Compiler to use CROSS_COMPILE allows cross compilation with aarch64-none-linux-gnu-
 # else resolves to gcc
-CC := $(CROSS_COMPILE)gcc
+CC ?= $(CROSS_COMPILE)gcc
 
 # Compiler flags:
 # -Wall: enable compiler warnings
 # -Werror: treat all warnings as errors
-CFLAGS := -Wall -Werror
+CFLAGS ?= -Wall -Werror
 
 # Name of the final executable
-TARGET := aesdsocket
+TARGET ?= aesdsocket
 
 # Source files
 SRC := aesdsocket.c
