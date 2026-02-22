@@ -14,6 +14,8 @@ CC ?= $(CROSS_COMPILE)gcc
 # -Werror: treat all warnings as errors
 CFLAGS ?= -Wall -Werror
 
+LDFLAGS ?= -lpthread -lrt
+
 # Name of the final executable
 TARGET ?= aesdsocket
 
