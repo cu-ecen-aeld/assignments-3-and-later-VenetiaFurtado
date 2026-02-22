@@ -39,7 +39,7 @@ all: $(TARGET)
 # $@ -> target name (writer)
 # $^ -> all prerequisites (writer.o)
 $(TARGET): $(OBJ)
-	$(CC) $(CFLAGS) -o $@ $^
+	$(CC) $(CFLAGS) -o $@ $^ $(LDFLAGS)
 
 
 # Clean target
