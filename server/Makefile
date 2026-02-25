@@ -1,5 +1,4 @@
 ################################################################################
-# Assignment 2: File Operations and Cross Compiler
 # ECEN 5713 | Spring 2026
 # Author: Venetia Furtado
 # GNU makefile for writer application
@@ -8,15 +7,17 @@
 
 # Compiler to use CROSS_COMPILE allows cross compilation with aarch64-none-linux-gnu-
 # else resolves to gcc
-CC := $(CROSS_COMPILE)gcc
+CC ?= $(CROSS_COMPILE)gcc
 
 # Compiler flags:
 # -Wall: enable compiler warnings
 # -Werror: treat all warnings as errors
-CFLAGS := -Wall -Werror
+CFLAGS ?= -Wall -Werror
+
+LDFLAGS ?= -lpthread -lrt
 
 # Name of the final executable
-TARGET := aesdsocket
+TARGET ?= aesdsocket
 
 # Source files
 SRC := aesdsocket.c
@@ -38,7 +39,7 @@ all: $(TARGET)
 # $@ -> target name (writer)
 # $^ -> all prerequisites (writer.o)
 $(TARGET): $(OBJ)
-	$(CC) $(CFLAGS) -o $@ $^
+	$(CC) $(CFLAGS) -o $@ $^ $(LDFLAGS)
 
 
 # Clean target
