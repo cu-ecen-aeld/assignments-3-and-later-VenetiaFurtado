@@ -36,37 +36,55 @@ struct aesd_buffer_entry *aesd_circular_buffer_find_entry_offset_for_fpos(struct
     }
 
     // buffer empty check
-    if ((buffer->in_offs == buffer->out_offs) && (buffer->full == false)) 
+    if ((buffer->full == false) && (buffer->in_offs == buffer->out_offs)) 
     {
         return NULL;
     }
 
-    size_t cumulative = 0;
+    // determine how many iterations we need to search for the offset
+    size_t num_iterations = 0;
 
-    uint8_t i = buffer->out_offs;
+    // if buffer is full, we need to check the entire cb
+    if (buffer->full == true)
+    {
+        num_iterations = AESDCHAR_MAX_WRITE_OPERATIONS_SUPPORTED;
+    }
+    else
+    { 
+        // iterate from oldest(out_offs) to newest(in_offs)       
+        if(buffer->in_offs > buffer->out_offs)
+        {
+            num_iterations = buffer->in_offs - buffer->out_offs;
+        }
+        // iterate from oldest(out_offs) to newest(in_offs) with wraparound
+        else
+        {
+            num_iterations = (AESDCHAR_MAX_WRITE_OPERATIONS_SUPPORTED - buffer->out_offs) + buffer->in_offs;
+        }
+    }
 
     // iterate from oldest entry (out_offs) to newest entry (in_offs) 
     // and wraparound if we reach the end of the cb before reaching in_offs
-    while (i < buffer->in_offs)
+    uint8_t posn = buffer->out_offs;
+    size_t cumulative = 0;
+
+    for(size_t i = 0; i < num_iterations; i++)
     {
-        for (size_t j = 0; j < buffer->entry[i].size; j++)
+        for (size_t j = 0; j < buffer->entry[posn].size; j++)
         {
             if (cumulative == char_offset)
             {
                 *entry_offset_byte_rtn = j;
-                return &(buffer->entry[i]);
+                return &(buffer->entry[posn]);
             }
             cumulative++;
         }
 
-        i++;
-
-        if (i == AESDCHAR_MAX_WRITE_OPERATIONS_SUPPORTED)
-        {
-            i = 0;
-        }
+        // wraparound
+        posn = (posn +1) % AESDCHAR_MAX_WRITE_OPERATIONS_SUPPORTED;
     }
-
+    
+    *entry_offset_byte_rtn = 0;
     return NULL;
 }
 
