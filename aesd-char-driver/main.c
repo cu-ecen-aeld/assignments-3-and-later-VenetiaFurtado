@@ -16,7 +16,8 @@
 #include <linux/printk.h>
 #include <linux/types.h>
 #include <linux/cdev.h>
-#include <linux/fs.h> // file_operations
+#include <linux/slab.h> // required for kmalloc
+#include <linux/fs.h>   // file_operations
 #include "aesdchar.h"
 int aesd_major = 0; // use dynamic major
 int aesd_minor = 0;
@@ -28,8 +29,9 @@ struct aesd_dev aesd_device;
 
 int aesd_open(struct inode *inode, struct file *filp)
 {
+    struct aesd_dev *dev;
     PDEBUG("open");
-    struct aesd_dev *dev = container_of(inode->i_cdev, struct aesd_dev, cdev);
+    dev = container_of(inode->i_cdev, struct aesd_dev, cdev);
     filp->private_data = dev;
     return 0;
 }
@@ -45,6 +47,12 @@ ssize_t aesd_read(struct file *filp, char __user *buf, size_t count,
                   loff_t *f_pos)
 {
     ssize_t retval = 0;
+    struct aesd_dev *dev = NULL;
+    size_t entry_offset_byte_rtn = 0;
+    struct aesd_buffer_entry *entry = NULL;
+    ssize_t num_copy_bytes = 0;
+    unsigned long copy_status = 0;
+
     PDEBUG("read %zu bytes with offset %lld", count, *f_pos);
 
     // error checking
@@ -54,7 +62,7 @@ ssize_t aesd_read(struct file *filp, char __user *buf, size_t count,
         return -EINVAL;
     }
 
-    struct aesd_dev *dev = filp->private_data;
+    dev = filp->private_data;
     if (dev == NULL)
     {
         PDEBUG("ERROR: device driver pointer is NULL");
@@ -68,8 +76,7 @@ ssize_t aesd_read(struct file *filp, char __user *buf, size_t count,
     }
 
     // find data offset
-    size_t entry_offset_byte_rtn;
-    struct aesd_buffer_entry *entry = aesd_circular_buffer_find_entry_offset_for_fpos(&(dev->buffer), f_pos, &entry_offset_byte_rtn);
+    entry = aesd_circular_buffer_find_entry_offset_for_fpos(&(dev->buffer), *f_pos, &entry_offset_byte_rtn);
     if (entry == NULL)
     {
         PDEBUG("DEBUG: Invalid offset provided");
@@ -78,9 +85,9 @@ ssize_t aesd_read(struct file *filp, char __user *buf, size_t count,
     }
 
     // copy data
-    ssize_t num_copy_bytes = min(count, entry->size - entry_offset_byte_rtn);
+    num_copy_bytes = min(count, entry->size - entry_offset_byte_rtn);
 
-    unsigned long copy_status = copy_to_user(buf, entry->buffptr + entry_offset_byte_rtn, num_copy_bytes);
+    copy_status = copy_to_user(buf, entry->buffptr + entry_offset_byte_rtn, num_copy_bytes);
     if (copy_status == 0)
     {
         // advance file position by number of bytes copied
@@ -102,17 +109,23 @@ ssize_t aesd_read(struct file *filp, char __user *buf, size_t count,
 ssize_t aesd_write(struct file *filp, const char __user *buf, size_t count,
                    loff_t *f_pos)
 {
-    if (filp == NULL || buf == NULL || fpos == NULL)
+    ssize_t retval = 0;
+    char *kbuf = NULL;
+    unsigned long status;
+    bool write_to_cb = false;
+    struct aesd_dev *dev = NULL;
+    size_t i = 0;
+
+    if (filp == NULL || buf == NULL || f_pos == NULL)
     {
         PDEBUG("ERROR: input argument error");
         return -EINVAL;
     }
 
-    ssize_t retval = 0;
     PDEBUG("write %zu bytes with offset %lld", count, *f_pos);
 
     // allocate memory
-    char *kbuf = kmalloc(count, GFP_KERNEL);
+    kbuf = kmalloc(count, GFP_KERNEL);
     if (kbuf == NULL)
     {
         PDEBUG("ERROR: Cannot allocate memory for new data");
@@ -120,7 +133,7 @@ ssize_t aesd_write(struct file *filp, const char __user *buf, size_t count,
     }
 
     // copy from user to kernel space
-    unsigned long status = copy_from_user(kbuf, buf, count);
+    status = copy_from_user(kbuf, buf, count);
     if (status != 0)
     {
         PDEBUG("ERROR: copy from userspace failed");
@@ -128,8 +141,7 @@ ssize_t aesd_write(struct file *filp, const char __user *buf, size_t count,
     }
 
     // check if data contains newline
-    bool write_to_cb = false;
-    for (size_t i = 0; i < count; i++)
+    for (i = 0; i < count; i++)
     {
         if (kbuf[i] == '\n')
         {
@@ -138,7 +150,7 @@ ssize_t aesd_write(struct file *filp, const char __user *buf, size_t count,
         }
     }
 
-    struct aesd_dev *dev = filp->private_data;
+    dev = filp->private_data;
     if (dev == NULL)
     {
         PDEBUG("ERROR: device driver pointer is NULL");
@@ -235,12 +247,13 @@ int aesd_init_module(void)
 
 void aesd_cleanup_module(void)
 {
+    uint8_t index = 0;
+    struct aesd_buffer_entry *entryptr = NULL;
+
     dev_t devno = MKDEV(aesd_major, aesd_minor);
 
     cdev_del(&aesd_device.cdev);
 
-    uint8_t index = 0;
-    struct aesd_buffer_entry *entryptr = NULL;
     AESD_CIRCULAR_BUFFER_FOREACH(entryptr, &aesd_device.buffer, index)
     {
         if (entryptr->buffptr != NULL)

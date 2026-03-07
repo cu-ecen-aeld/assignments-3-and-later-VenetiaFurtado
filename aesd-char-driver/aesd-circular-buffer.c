@@ -67,10 +67,11 @@ struct aesd_buffer_entry *aesd_circular_buffer_find_entry_offset_for_fpos(struct
     // and wraparound if we reach the end of the cb before reaching in_offs
     uint8_t posn = buffer->out_offs;
     size_t cumulative = 0;
-
-    for (size_t i = 0; i < num_iterations; i++)
+    size_t i = 0;
+    for (i = 0; i < num_iterations; i++)
     {
-        for (size_t j = 0; j < buffer->entry[posn].size; j++)
+        size_t j = 0;
+        for (j = 0; j < buffer->entry[posn].size; j++)
         {
             if (cumulative == char_offset)
             {
