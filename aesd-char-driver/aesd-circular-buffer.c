@@ -108,18 +108,18 @@ const char *aesd_circular_buffer_add_entry(struct aesd_circular_buffer *buffer, 
         return NULL;
     }
 
-    // add new entry to cb
-    buffer->entry[buffer->in_offs] = *add_entry;
-
-    // increment in_offs and wrap around if > AESDCHAR_MAX_WRITE_OPERATIONS_SUPPORTED
-    buffer->in_offs = (buffer->in_offs + 1) % AESDCHAR_MAX_WRITE_OPERATIONS_SUPPORTED;
-
     // since buffer is full , increment out_offs by 1
     if (buffer->full == true)
     {
         buffptr_to_free = buffer->entry[buffer->out_offs].buffptr;
         buffer->out_offs = (buffer->out_offs + 1) % AESDCHAR_MAX_WRITE_OPERATIONS_SUPPORTED;
     }
+
+    // add new entry to cb
+    buffer->entry[buffer->in_offs] = *add_entry;
+
+    // increment in_offs and wrap around if > AESDCHAR_MAX_WRITE_OPERATIONS_SUPPORTED
+    buffer->in_offs = (buffer->in_offs + 1) % AESDCHAR_MAX_WRITE_OPERATIONS_SUPPORTED;
 
     // set buffer full to true if in_offs has wrapped around
     if (buffer->in_offs == buffer->out_offs)
