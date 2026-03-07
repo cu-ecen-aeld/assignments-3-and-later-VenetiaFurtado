@@ -29,6 +29,11 @@
 struct aesd_buffer_entry *aesd_circular_buffer_find_entry_offset_for_fpos(struct aesd_circular_buffer *buffer,
                                                                           size_t char_offset, size_t *entry_offset_byte_rtn)
 {
+    size_t num_iterations = 0;
+    uint8_t posn = buffer->out_offs;
+    size_t cumulative = 0;
+    size_t i = 0;
+
     // input sanity check
     if (buffer == NULL || entry_offset_byte_rtn == NULL)
     {
@@ -42,7 +47,6 @@ struct aesd_buffer_entry *aesd_circular_buffer_find_entry_offset_for_fpos(struct
     }
 
     // determine how many iterations we need to search for the offset
-    size_t num_iterations = 0;
 
     // if buffer is full, we need to check the entire cb
     if (buffer->full == true)
@@ -65,9 +69,7 @@ struct aesd_buffer_entry *aesd_circular_buffer_find_entry_offset_for_fpos(struct
 
     // iterate from oldest entry (out_offs) to newest entry (in_offs)
     // and wraparound if we reach the end of the cb before reaching in_offs
-    uint8_t posn = buffer->out_offs;
-    size_t cumulative = 0;
-    size_t i = 0;
+    posn = buffer->out_offs;
     for (i = 0; i < num_iterations; i++)
     {
         size_t j = 0;
@@ -98,6 +100,8 @@ struct aesd_buffer_entry *aesd_circular_buffer_find_entry_offset_for_fpos(struct
  */
 const char *aesd_circular_buffer_add_entry(struct aesd_circular_buffer *buffer, const struct aesd_buffer_entry *add_entry)
 {
+    const char *buffptr_to_free = NULL;
+
     // input sanity checks
     if (buffer == NULL || add_entry == NULL)
     {
@@ -110,7 +114,6 @@ const char *aesd_circular_buffer_add_entry(struct aesd_circular_buffer *buffer, 
     // increment in_offs and wrap around if > AESDCHAR_MAX_WRITE_OPERATIONS_SUPPORTED
     buffer->in_offs = (buffer->in_offs + 1) % AESDCHAR_MAX_WRITE_OPERATIONS_SUPPORTED;
 
-    const char *buffptr_to_free = NULL;
     // since buffer is full , increment out_offs by 1
     if (buffer->full == true)
     {
