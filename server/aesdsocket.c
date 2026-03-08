@@ -21,8 +21,13 @@
 #define PORT 9000  // the port users will be connecting to
 #define BACKLOG 10 // how many pending connections queue will hold
 #define BUFFER_SIZE 1024
+#define USE_AESD_CHAR_DEVICE 1
 #define FOLDER_PATH "/var/tmp"
+#if USE_AESD_CHAR_DEVICE
+#define FILE_PATH "/dev/aesdchar"
+#else
 #define FILE_PATH "/var/tmp/aesdsocketdata"
+#endif
 
 pthread_mutex_t file_mutex;
 static volatile bool exit_requested = false;
@@ -42,7 +47,6 @@ void signalHandler(int signo)
 {
    if (signo == SIGINT || signo == SIGTERM)
    {
-      syslog(LOG_INFO, "Caught signal, exiting");
       exit_requested = true;
    }
 }
@@ -70,7 +74,7 @@ void timer_handler(union sigval sigval)
    if (writefile_fd < 0)
    {
       syslog(LOG_ERR, "writefile open failed");
-      pthread_mutex_unlock(&file_mutex);  // unlock before returning
+      pthread_mutex_unlock(&file_mutex); // unlock before returning
       return;
    }
 
@@ -78,7 +82,7 @@ void timer_handler(union sigval sigval)
    if (bytes_written < 0)
    {
       syslog(LOG_ERR, "ts not written");
-      pthread_mutex_unlock(&file_mutex);  // unlock before returning
+      pthread_mutex_unlock(&file_mutex); // unlock before returning
       return;
    }
 
@@ -320,7 +324,11 @@ void *processClientConnection(void *arg)
    int writefile_fd = -1;
    if (node != NULL)
    {
+#if USE_AESD_CHAR_DEVICE
+      writefile_fd = open(FILE_PATH, O_WRONLY | O_APPEND);
+#else
       writefile_fd = open(FILE_PATH, O_WRONLY | O_CREAT | O_APPEND, 0644);
+#endif
       if (writefile_fd < 0)
       {
          syslog(LOG_ERR, "writefile open failed");
@@ -491,7 +499,6 @@ int main(int argc, char *argv[])
    sigaction(SIGINT, &signal_action, NULL);
    sigaction(SIGTERM, &signal_action, NULL);
 
-
    // creating socket file descriptor
    int sock_fd = createSocket(daemon_mode);
    if (sock_fd < 0)
@@ -500,8 +507,10 @@ int main(int argc, char *argv[])
       return -1;
    }
 
-   //https://chatgpt.com/share/6999e4b4-4eb8-8001-b45e-dd046a60ca70
+// https://chatgpt.com/share/6999e4b4-4eb8-8001-b45e-dd046a60ca70
+#if !USE_AESD_CHAR_DEVICE
    timerInit();
+#endif
 
    // client accept + recv loop
    while (exit_requested == false)
@@ -515,15 +524,20 @@ int main(int argc, char *argv[])
 
    close(sock_fd);
 
-   // https://chatgpt.com/share/6990b14f-5cec-8001-afef-c634acf831d3
+// https://chatgpt.com/share/6990b14f-5cec-8001-afef-c634acf831d3
+#if !USE_AESD_CHAR_DEVICE
    if (remove(FILE_PATH) != 0)
    {
       syslog(LOG_ERR, "Error deleting file");
    }
    syslog(LOG_DEBUG, "Deleted File");
+#endif
 
+#if !USE_AESD_CHAR_DEVICE
    timer_delete(timerid); // delete timer
-   closelog();            // Clean up syslog
+#endif
+
+   closelog(); // Clean up syslog
 
    return 0;
 }
