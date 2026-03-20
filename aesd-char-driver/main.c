@@ -265,6 +265,7 @@ long aesd_ioctl(struct file *filp, unsigned int cmd, unsigned long arg)
 
     if (cmd != AESDCHAR_IOCSEEKTO)
     {
+        PDEBUG("ERROR: cmd != AESDCHAR_IOCSEEKTO");
         return -ENOTTY;
     }
 
@@ -284,7 +285,7 @@ long aesd_ioctl(struct file *filp, unsigned int cmd, unsigned long arg)
     }
 
     // copy from user to kernel space
-    status = copy_from_user(&seekto_val, &arg, sizeof(struct aesd_seekto));
+    status = copy_from_user(&seekto_val, (const void __user *)arg, sizeof(struct aesd_seekto));
     if (status != 0)
     {
         PDEBUG("ERROR: copy from userspace failed");
