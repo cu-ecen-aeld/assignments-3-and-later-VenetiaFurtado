@@ -36,14 +36,14 @@ size_t aesd_circular_buffer_get_length(struct aesd_circular_buffer *buffer)
     return total_size;
 }
 
-loff_t aesd_circular_buffer_find_seekto_fpos(struct aesd_circular_buffer *buffer, uint32_t write_cmd,
+size_t aesd_circular_buffer_find_seekto_fpos(struct aesd_circular_buffer *buffer, uint32_t write_cmd,
                                              uint32_t write_cmd_offset)
 {
     size_t num_iterations = 0;
     uint8_t posn = buffer->out_offs;
     size_t cumulative = 0;
     size_t i = 0;
-    loff_t offset = -1;
+    size_t offset = 0;
 
     // input sanity check
     if (buffer == NULL)
