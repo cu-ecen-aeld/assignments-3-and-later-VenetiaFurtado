@@ -17,6 +17,7 @@
 #include <sys/stat.h>
 #include <pthread.h>
 #include <time.h>
+#include "../aesd-char-driver/aesd_ioctl.h"
 
 #define PORT 9000  // the port users will be connecting to
 #define BACKLOG 10 // how many pending connections queue will hold
@@ -239,6 +240,73 @@ typedef struct ThreadArg
 
 ThreadArg dummyNode;
 
+// usage: findCommand(head, "AESDCHAR_IOCSEEKTO:", &seekto)
+bool findCommand(const RecvDataLinkedList *head, const char *command, struct aesd_seekto *seekto)
+{
+   int command_len = strlen(command);
+   int i = 0;
+   bool command_found = false;
+   bool write_cmd_found = false;
+   uint32_t write_cmd = 0;
+   uint32_t write_cmd_offset = 0;
+
+   if (!head || !command)
+   {
+      return false;
+   }
+
+   while (head != NULL)
+   {
+      for (int j = 0; j < head->len; j++)
+      {
+         if (head->buffer[j] == '\n')
+         {
+            break;
+         }
+
+         if (command_found == false)
+         {
+            if (command[i] != head->buffer[j])
+            {
+               return false;
+            }
+
+            i++;
+            if (i == command_len)
+            {
+               command_found = true;
+            }
+         }
+         else
+         {
+            if (head->buffer[j] == ',')
+            {
+               write_cmd_found = true;
+            }
+            else if (write_cmd_found == false)
+            {
+               write_cmd = write_cmd * 10 + (head->buffer[j] - 48);
+            }
+            else
+            {
+               write_cmd_offset = write_cmd_offset * 10 + (head->buffer[j] - 48);
+            }
+         }
+      }
+      head = head->next;
+   }
+
+   if (write_cmd_found == false)
+   {
+      return false;
+   }
+
+   seekto->write_cmd = write_cmd;
+   seekto->write_cmd_offset = write_cmd_offset;
+
+   return true;
+}
+
 /**
  * Thread routine to process a client socket connection. The function is executed
  * in a separate thread for each accepted client connection.
@@ -321,52 +389,58 @@ void *processClientConnection(void *arg)
    pthread_mutex_lock(&file_mutex);
 
    // if any data is received, open the file
-   int writefile_fd = -1;
+   int file_fd = -1;
    if (node != NULL)
    {
 #if USE_AESD_CHAR_DEVICE
-      writefile_fd = open(FILE_PATH, O_WRONLY | O_APPEND);
+      file_fd = open(FILE_PATH, O_RDWR | O_APPEND);
 #else
-      writefile_fd = open(FILE_PATH, O_WRONLY | O_CREAT | O_APPEND, 0644);
+      file_fd = open(FILE_PATH, O_WRONLY | O_CREAT | O_APPEND, 0644);
 #endif
-      if (writefile_fd < 0)
+      if (file_fd < 0)
       {
          syslog(LOG_ERR, "writefile open failed");
          status = -1;
       }
    }
 
-   // copy received data into the file
-   while (writefile_fd >= 0 && node != NULL)
+   struct aesd_seekto seekto;
+   bool command_found = findCommand(node, "AESDCHAR_IOCSEEKTO:", &seekto);
+   if (command_found == true)
    {
-      syslog(LOG_DEBUG, "writing %d bytes to file", node->len);
-      size_t bytes_to_write = node->len;
-      size_t bytes_written = write(writefile_fd, node->buffer, bytes_to_write);
-      if (bytes_written < bytes_to_write)
+      if (ioctl(file_fd, AESDCHAR_IOCSEEKTO, &seekto) != 0)
       {
-         syslog(LOG_ERR, "bytes_written %ld < bytes_to_write %ld", bytes_written, bytes_to_write);
+         syslog(LOG_ERR, "ioctl failed!");
       }
-      free(node->buffer);
-      node->buffer = NULL;
-      RecvDataLinkedList *tempnode = node;
-      node = node->next;
-      free(tempnode);
    }
-
-   if (writefile_fd >= 0)
+   else
    {
-      close(writefile_fd);
+      // copy received data into the file
+      while (file_fd >= 0 && node != NULL)
+      {
+         syslog(LOG_DEBUG, "writing %d bytes to file", node->len);
+         size_t bytes_to_write = node->len;
+         size_t bytes_written = write(file_fd, node->buffer, bytes_to_write);
+         if (bytes_written < bytes_to_write)
+         {
+            syslog(LOG_ERR, "bytes_written %ld < bytes_to_write %ld", bytes_written, bytes_to_write);
+         }
+         free(node->buffer);
+         node->buffer = NULL;
+         RecvDataLinkedList *tempnode = node;
+         node = node->next;
+         free(tempnode);
+      }
    }
 
    pthread_mutex_unlock(&file_mutex);
 
-   int readfilefd = open(FILE_PATH, O_RDONLY);
-   if (readfilefd >= 0)
+   if (file_fd >= 0)
    {
       while (1)
       {
          char buffer[BUFFER_SIZE];
-         ssize_t bytes_read = read(readfilefd, buffer, BUFFER_SIZE);
+         ssize_t bytes_read = read(file_fd, buffer, BUFFER_SIZE);
          if (bytes_read <= 0)
          {
             break;
@@ -374,12 +448,7 @@ void *processClientConnection(void *arg)
 
          send(client_fd, buffer, bytes_read, 0);
       }
-      close(readfilefd);
-   }
-   else
-   {
-      syslog(LOG_ERR, "read file open failed");
-      status = -1;
+      close(file_fd);
    }
 
    if (status == 0)
