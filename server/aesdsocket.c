@@ -24,6 +24,7 @@
 #define BUFFER_SIZE 1024
 #define USE_AESD_CHAR_DEVICE 1
 #define FOLDER_PATH "/var/tmp"
+#define AESDCHAR_IOCSEEKTO_CMD "AESDCHAR_IOCSEEKTO:"
 #if USE_AESD_CHAR_DEVICE
 #define FILE_PATH "/dev/aesdchar"
 #else
@@ -285,11 +286,19 @@ bool findCommand(const RecvDataLinkedList *head, const char *command, struct aes
             }
             else if (write_cmd_found == false)
             {
-               write_cmd = write_cmd * 10 + (head->buffer[j] - 48);
+               if (head->buffer[j] < '0' || head->buffer[j] > '9')
+               {
+                  return false;
+               }
+               write_cmd = write_cmd * 10 + (head->buffer[j] - '0');
             }
             else
             {
-               write_cmd_offset = write_cmd_offset * 10 + (head->buffer[j] - 48);
+               if (head->buffer[j] < '0' || head->buffer[j] > '9')
+               {
+                  return false;
+               }
+               write_cmd_offset = write_cmd_offset * 10 + (head->buffer[j] - '0');
             }
          }
       }
@@ -405,7 +414,7 @@ void *processClientConnection(void *arg)
    }
 
    struct aesd_seekto seekto;
-   bool command_found = findCommand(node, "AESDCHAR_IOCSEEKTO:", &seekto);
+   bool command_found = findCommand(node, AESDCHAR_IOCSEEKTO_CMD, &seekto);
    if (command_found == true)
    {
       if (ioctl(file_fd, AESDCHAR_IOCSEEKTO, &seekto) != 0)
