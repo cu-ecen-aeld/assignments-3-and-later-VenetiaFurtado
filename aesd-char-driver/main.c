@@ -19,6 +19,8 @@
 #include <linux/slab.h> // required for kmalloc
 #include <linux/fs.h>   // file_operations
 #include "aesdchar.h"
+#include "aesd_ioctl.h"
+
 int aesd_major = 0; // use dynamic major
 int aesd_minor = 0;
 
@@ -194,12 +196,130 @@ ssize_t aesd_write(struct file *filp, const char __user *buf, size_t count,
 
     return retval;
 }
+
+loff_t aesd_llseek(struct file *filp, loff_t offset, int whence)
+{
+    struct aesd_dev *dev = NULL;
+    loff_t new_f_pos = -1;
+    size_t total_size = 0;
+
+    // error checking
+    if (filp == NULL)
+    {
+        PDEBUG("ERROR: input argument error");
+        return -EINVAL;
+    }
+
+    dev = filp->private_data;
+
+    if (dev == NULL)
+    {
+        PDEBUG("ERROR: device driver pointer is NULL");
+        return -EINVAL;
+    }
+
+    if (mutex_lock_interruptible(&dev->lock))
+    {
+        PDEBUG("ERROR: Not able to lock mutex");
+        return -ERESTARTSYS;
+    }
+
+    total_size = aesd_circular_buffer_get_length(&(dev->buffer));
+
+    mutex_unlock(&dev->lock);
+
+    switch (whence)
+    {
+    case SEEK_SET:
+        new_f_pos = offset;
+        break;
+
+    case SEEK_CUR:
+        new_f_pos = filp->f_pos + offset;
+        break;
+
+    case SEEK_END:
+        new_f_pos = total_size + offset;
+        break;
+
+    default:
+        return -EINVAL;
+    }
+
+    if (new_f_pos < 0 || new_f_pos > total_size)
+    {
+        return -EINVAL;
+    }
+
+    filp->f_pos = new_f_pos;
+
+    return new_f_pos;
+}
+
+long aesd_ioctl(struct file *filp, unsigned int cmd, unsigned long arg)
+{
+    struct aesd_dev *dev = NULL;
+    struct aesd_seekto seekto_val;
+    unsigned long status;
+    loff_t new_f_pos = -1;
+
+    if (cmd != AESDCHAR_IOCSEEKTO)
+    {
+        PDEBUG("ERROR: cmd != AESDCHAR_IOCSEEKTO");
+        return -ENOTTY;
+    }
+
+    // error checking
+    if (filp == NULL)
+    {
+        PDEBUG("ERROR: input argument error");
+        return -EINVAL;
+    }
+
+    dev = filp->private_data;
+
+    if (dev == NULL)
+    {
+        PDEBUG("ERROR: device driver pointer is NULL");
+        return -EINVAL;
+    }
+
+    // copy from user to kernel space
+    status = copy_from_user(&seekto_val, (const void __user *)arg, sizeof(struct aesd_seekto));
+    if (status != 0)
+    {
+        PDEBUG("ERROR: copy from userspace failed");
+        return -EFAULT;
+    }
+
+    if (mutex_lock_interruptible(&dev->lock))
+    {
+        PDEBUG("ERROR: Not able to lock mutex");
+        return -ERESTARTSYS;
+    }
+
+    new_f_pos = aesd_circular_buffer_find_seekto_fpos(&(dev->buffer), seekto_val.write_cmd, seekto_val.write_cmd_offset);
+
+    mutex_unlock(&dev->lock);
+
+    if (new_f_pos == -1)
+    {
+        return -EINVAL;
+    }
+
+    filp->f_pos = new_f_pos;
+
+    return 0;
+}
+
 struct file_operations aesd_fops = {
     .owner = THIS_MODULE,
     .read = aesd_read,
     .write = aesd_write,
     .open = aesd_open,
     .release = aesd_release,
+    .llseek = aesd_llseek,
+    .unlocked_ioctl = aesd_ioctl,
 };
 
 static int aesd_setup_cdev(struct aesd_dev *dev)

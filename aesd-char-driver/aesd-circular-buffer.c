@@ -16,6 +16,99 @@
 
 #include "aesd-circular-buffer.h"
 
+size_t aesd_circular_buffer_get_length(struct aesd_circular_buffer *buffer)
+{
+    uint8_t i = 0;
+    size_t total_size = 0;
+    if (buffer == NULL)
+    {
+        return 0;
+    }
+
+    for (i = 0; i < AESDCHAR_MAX_WRITE_OPERATIONS_SUPPORTED; i++)
+    {
+        if (buffer->entry[i].buffptr != NULL)
+        {
+            total_size += buffer->entry[i].size;
+        }
+    }
+
+    return total_size;
+}
+
+size_t aesd_circular_buffer_find_seekto_fpos(struct aesd_circular_buffer *buffer, uint32_t write_cmd,
+                                             uint32_t write_cmd_offset)
+{
+    size_t num_iterations = 0;
+    uint8_t posn = buffer->out_offs;
+    size_t cumulative = 0;
+    size_t i = 0;
+    size_t offset = 0;
+
+    // input sanity check
+    if (buffer == NULL)
+    {
+        return -1;
+    }
+
+    // buffer empty check
+    if ((buffer->full == false) && (buffer->in_offs == buffer->out_offs))
+    {
+        return -1;
+    }
+
+    // determine how many iterations we need to search for the offset
+
+    // if buffer is full, we need to check the entire cb
+    if (buffer->full == true)
+    {
+        num_iterations = AESDCHAR_MAX_WRITE_OPERATIONS_SUPPORTED;
+    }
+    else
+    {
+        // iterate from oldest(out_offs) to newest(in_offs)
+        if (buffer->in_offs > buffer->out_offs)
+        {
+            num_iterations = buffer->in_offs - buffer->out_offs;
+        }
+        // iterate from oldest(out_offs) to newest(in_offs) with wraparound
+        else
+        {
+            num_iterations = (AESDCHAR_MAX_WRITE_OPERATIONS_SUPPORTED - buffer->out_offs) + buffer->in_offs;
+        }
+    }
+
+    if (write_cmd > num_iterations)
+    {
+        return -1;
+    }
+
+    // iterate from oldest entry (out_offs) to newest entry (in_offs)
+    // and wraparound if we reach the end of the cb before reaching in_offs
+    posn = buffer->out_offs;
+    for (i = 0; i < num_iterations; i++)
+    {
+        if (i == write_cmd)
+        {
+            break;
+        }
+
+        cumulative += buffer->entry[posn].size;
+
+        // wraparound
+        posn = (posn + 1) % AESDCHAR_MAX_WRITE_OPERATIONS_SUPPORTED;
+    }
+
+    if (write_cmd_offset > buffer->entry[posn].size)
+    {
+        return -1;
+    }
+
+    offset = cumulative + write_cmd_offset;
+
+    return offset;
+}
+
 /**
  * @param buffer the buffer to search for corresponding offset.  Any necessary locking must be performed by caller.
  * @param char_offset the position to search for in the buffer list, describing the zero referenced
@@ -26,8 +119,9 @@
  * @return the struct aesd_buffer_entry structure representing the position described by char_offset, or
  * NULL if this position is not available in the buffer (not enough data is written).
  */
-struct aesd_buffer_entry *aesd_circular_buffer_find_entry_offset_for_fpos(struct aesd_circular_buffer *buffer,
-                                                                          size_t char_offset, size_t *entry_offset_byte_rtn)
+struct aesd_buffer_entry *
+aesd_circular_buffer_find_entry_offset_for_fpos(struct aesd_circular_buffer *buffer,
+                                                size_t char_offset, size_t *entry_offset_byte_rtn)
 {
     size_t num_iterations = 0;
     uint8_t posn = buffer->out_offs;
